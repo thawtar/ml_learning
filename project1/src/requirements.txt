@@ -1,4 +1,31 @@
 torch>=2.0
 numpy
 pyyaml
-mlflow>=2.0
+tqdm==4.67.1
+
+scikit-learn==1.5.2
+torch==2.5.1
+torchvision==0.20.1
+xgboost==2.1.2
+pandas==2.2.3
+
+# MLflow Stack
+mlflow==2.18.0
+
+# Data Versioning
+dvc==3.56.0
+
+# Data Processing & Visualization
+scipy==1.14.1
+matplotlib==3.9.2
+seaborn==0.13.2
+
+# Development Tools
+jupyter==1.1.1
+ipykernel==6.29.5
+notebook==7.3.1
+
+
+
+
+
