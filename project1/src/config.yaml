@@ -1,0 +1,23 @@
+# MLOps Pipeline Configuration
+project:
+  name: "mlops_project"
+  seed: 42
+
+data:
+  train_path: "data/train.csv"
+  val_split: 0.2
+  batch_size: 32
+
+model:
+  type: "mlp"
+  hidden_dims: [128, 64]
+  dropout: 0.1
+
+training:
+  epochs: 100
+  lr: 1e-3
+  early_stop_patience: 10
+
+experiment:
+  tracking_uri: "mlruns"  # MLflow tracking directory
+  run_name: null          # Auto-generated if null
