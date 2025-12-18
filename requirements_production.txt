@@ -1,0 +1,16 @@
+# requirements-prod.txt (minimal for deployment)
+scikit-learn==1.5.2
+torch==2.5.1
+xgboost==2.1.2
+mlflow==2.18.0
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+numpy==1.26.4
+
+# requirements-dev.txt (includes everything)
+
+pytest==8.3.4
+jupyter==1.1.1
+black==24.10.0
+dvc==3.56.0
+hydra-core==1.3.2
