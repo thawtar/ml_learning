@@ -1,0 +1,84 @@
+# Dockerfile
+# Multi-stage build for minimal production image
+
+# ============================================================================
+# Stage 1: Builder - Install dependencies and compile wheels
+# ============================================================================
+FROM python:3.10-slim as builder
+
+# Set working directory
+WORKDIR /build
+
+# Install system dependencies for building Python packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    g++ \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for Docker layer caching
+COPY requirements-prod.txt .
+
+# Create virtual environment and install dependencies
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Upgrade pip and install dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements-prod.txt
+
+# ============================================================================
+# Stage 2: Production - Minimal runtime image
+# ============================================================================
+FROM python:3.10-slim
+
+# Metadata
+LABEL maintainer="your.email@example.com"
+LABEL description="MLOps Production Server for CFD Predictions"
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    MLFLOW_TRACKING_URI="http://mlflow:5000" \
+    MODEL_NAME="cfd_predictor" \
+    MODEL_STAGE="production"
+
+# Install only runtime system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN groupadd -r mlops && useradd -r -g mlops -u 1001 mlops
+
+# Set working directory
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Copy application code
+COPY --chown=mlops:mlops ./src /app/src
+COPY --chown=mlops:mlops ./serve.py /app/
+COPY --chown=mlops:mlops ./config /app/config
+
+# Create directories for model cache and logs
+RUN mkdir -p /app/models /app/logs && \
+    chown -R mlops:mlops /app
+
+# Switch to non-root user
+USER mlops
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run FastAPI server with uvicorn
+CMD ["uvicorn", "serve:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
