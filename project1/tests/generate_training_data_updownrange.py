@@ -1,16 +1,17 @@
 """
-Forex Training Data Generator - Simplified Single Label Version
-================================================================
-Generates training data for AI forex prediction models.
+Forex Training Data Generator - Three-Class Label Version (UP/SIDEWAYS/DOWN)
+===========================================================================
+Generates training data for AI forex prediction models with three-class classification.
 
 Features per sample:
 - OHLC sequence (Heikin-Ashi) for sequence_length time steps
 - MACD and RSI indicators at current time step
-- Single binary label: UP (1) or DOWN (0) based on price after window_size steps
+- Three-class label: UP (2), SIDEWAYS (1), or DOWN (0)
 
 Label Logic:
-- Label = 1 (UP) if close[current + window_size] > close[current]
-- Label = 0 (DOWN) otherwise
+- Label = 2 (UP) if close[current + window_size] > close[current] + sideways_threshold
+- Label = 1 (SIDEWAYS) if |close[current + window_size] - close[current]| <= sideways_threshold
+- Label = 0 (DOWN) if close[current + window_size] < close[current] - sideways_threshold
 """
 
 import pandas as pd
@@ -74,39 +75,41 @@ class ForexIndicators:
 
 class HeikinAshiDataGenerator:
     """
-    Training data generator for forex prediction with simplified single label.
+    Training data generator for forex prediction with three-class labels.
     
     Generates sequences with:
     - Heikin-Ashi OHLC data (sequence_length time steps)
     - Technical indicators (MACD, RSI) at current step
-    - Single binary label: UP or DOWN based on price after prediction_horizon steps
+    - Three-class label: UP (2), SIDEWAYS (1), or DOWN (0)
     """
     
     def __init__(self, data_file: str, sequence_length: int = 9, 
-                 prediction_horizon: int = 4, pip_threshold: float = 0.0):
+                 prediction_horizon: int = 4, sideways_threshold: float = 0.001):
         """
         Initialize the data generator.
         
         Args:
             data_file: Path to CSV file with OHLC data
             sequence_length: Number of past candles for input sequence
-            prediction_horizon: Number of steps ahead to check price (renamed from future_window)
-            pip_threshold: Minimum price change to consider bullish (default 0)
+            prediction_horizon: Number of steps ahead to check price
+            sideways_threshold: Price change threshold to consider sideways (absolute value)
+                              e.g., 0.001 = 0.1% price change = sideways
+                              For USDJPY at 150.00, this would be ±0.15 (15 pips)
         """
         self.data_file = data_file
         self.sequence_length = sequence_length
-        self.prediction_horizon = prediction_horizon  # How many steps ahead to check
-        self.pip_threshold = pip_threshold
+        self.prediction_horizon = prediction_horizon
+        self.sideways_threshold = sideways_threshold
         
         self.df = None
         self.ha_df = None
         self.indicators_df = None
         
-        logger.info(f"Initialized HeikinAshiDataGenerator (Single Label Mode):")
+        logger.info(f"Initialized HeikinAshiDataGenerator (Three-Class Mode):")
         logger.info(f"  - Data file: {data_file}")
         logger.info(f"  - Sequence length: {sequence_length}")
         logger.info(f"  - Prediction horizon: {prediction_horizon} steps ahead")
-        logger.info(f"  - Pip threshold: {pip_threshold}")
+        logger.info(f"  - Sideways threshold: {sideways_threshold} (±{sideways_threshold*100:.2f}%)")
     
     def load_data(self) -> pd.DataFrame:
         """Load and validate forex data from CSV."""
@@ -182,7 +185,7 @@ class HeikinAshiDataGenerator:
         # Normalize MACD components by ATR for scale invariance
         self.indicators_df = pd.DataFrame({
             'RSI': rsi,
-            'MACD': macd_data['macd'] / (atr + 1e-8),  # Normalized
+            'MACD': macd_data['macd'] / (atr + 1e-8),
             'MACD_Signal': macd_data['signal'] / (atr + 1e-8),
             'MACD_Histogram': macd_data['histogram'] / (atr + 1e-8),
             'ATR': atr
@@ -203,18 +206,13 @@ class HeikinAshiDataGenerator:
         return self.indicators_df
     
     def _remove_nan_rows(self) -> None:
-        """
-        Remove rows with NaN values from both ha_df and indicators_df.
-        Ensures alignment between the two DataFrames.
-        """
+        """Remove rows with NaN values from both ha_df and indicators_df."""
         if self.ha_df is None:
             raise ValueError("Calculate Heikin-Ashi first")
         
         initial_length = len(self.ha_df)
         
-        # If indicators are being used, find rows with NaN
         if self.indicators_df is not None:
-            # Find indices with NaN in indicators
             nan_mask = self.indicators_df.isnull().any(axis=1)
             valid_indices = ~nan_mask
             
@@ -223,11 +221,9 @@ class HeikinAshiDataGenerator:
             if num_nan_rows > 0:
                 logger.info(f"Removing {num_nan_rows} rows with NaN values from indicators...")
                 
-                # Drop rows from both DataFrames
                 self.ha_df = self.ha_df[valid_indices].reset_index(drop=True)
                 self.indicators_df = self.indicators_df[valid_indices].reset_index(drop=True)
                 
-                # Also update the original df to maintain alignment
                 if self.df is not None:
                     self.df = self.df[valid_indices].reset_index(drop=True)
                 
@@ -237,7 +233,6 @@ class HeikinAshiDataGenerator:
             else:
                 logger.info("No NaN values found in indicators")
         else:
-            # Check ha_df for NaN even if no indicators
             nan_mask = self.ha_df.isnull().any(axis=1)
             valid_indices = ~nan_mask
             
@@ -254,29 +249,23 @@ class HeikinAshiDataGenerator:
                 logger.info(f"  - Rows after: {len(self.ha_df)}")
     
     def generate_sequences(self, include_indicators: bool = True,
-                      standardize: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+                          standardize: bool = True) -> Tuple[np.ndarray, np.ndarray]:
         """
         Generate input sequences and labels for training.
         
         Args:
-            include_indicators: Whether to include technical indicators (as separate features)
+            include_indicators: Whether to include technical indicators
             standardize: Whether to standardize OHLC sequences
             
         Returns:
-            If include_indicators=False:
-                X: shape (samples, sequence_length, 4) - OHLC only
-            If include_indicators=True:
-                X: shape (samples, sequence_length + 1, 4) where:
-                - First sequence_length rows: OHLC sequence
-                - Last row: [RSI, MACD, MACD_Signal, 0] - indicators + padding
-            y: Binary labels, shape (samples,)
+            X: Input sequences
+            y: Three-class labels (0=DOWN, 1=SIDEWAYS, 2=UP)
         """
         if self.ha_df is None:
             self.calculate_heikin_ashi()
         if include_indicators and self.indicators_df is None:
             self.calculate_indicators()
         
-        # CRITICAL: Remove NaN rows before generating sequences
         self._remove_nan_rows()
         
         logger.info("Generating training sequences...")
@@ -306,20 +295,18 @@ class HeikinAshiDataGenerator:
         sequences = []
         
         for i in range(num_samples):
-            # Extract OHLC sequence
             seq_start = i
             seq_end = i + self.sequence_length
             ohlc_seq = ha_ohlc[seq_start:seq_end].copy()
             ohlc_seq = ohlc_seq.astype(np.float32)
             ohlc_seq = np.array(ohlc_seq)
-            ohlc_seq = np.log10(ohlc_seq + 1e-8)  # Log transform to stabilize
-            # Check for NaN in this sequence
+            ohlc_seq = np.log10(ohlc_seq + 1e-8)
+            
             if np.isnan(ohlc_seq).any():
                 logger.warning(f"NaN detected in sequence {i}, skipping...")
                 continue
-            #print(ohlc_seq)
+            
             if standardize:
-                # Standardize OHLC sequence
                 mean = ohlc_seq.mean()
                 std = ohlc_seq.std()
                 if std < 1e-8:
@@ -327,20 +314,14 @@ class HeikinAshiDataGenerator:
                 ohlc_seq = (ohlc_seq - mean) / std
             
             if include_indicators:
-                # Get indicators ONLY at current timestep (end of sequence)
                 current_idx = seq_end - 1
                 ind_vals = indicators[current_idx]
                 
-                # Check for NaN in indicators
                 if np.isnan(ind_vals).any():
                     logger.warning(f"NaN detected in indicators at index {current_idx}, skipping...")
                     continue
                 
-                # Append indicators as an additional "timestep" row
-                # Shape: (sequence_length + 1, 4)
-                # First sequence_length rows: OHLC
-                # Last row: [RSI, MACD, MACD_Signal, 0]
-                indicator_row = np.concatenate([ind_vals, [0.0]]).reshape(1, 4)  # Pad to 4 features
+                indicator_row = np.concatenate([ind_vals, [0.0]]).reshape(1, 4)
                 full_sequence = np.vstack([ohlc_seq, indicator_row])
                 
                 sequences.append(full_sequence)
@@ -374,32 +355,34 @@ class HeikinAshiDataGenerator:
             raise ValueError(f"Final check failed: {nan_count} NaN values found in y!")
         
         logger.info(f"Generated {len(X)} samples (after NaN removal)")
-        logger.info(f"  X shape: {X.shape} (samples, sequence_length{'+1 if indicators' if include_indicators else ''}, features=4)")
-        logger.info(f"  y shape: {y.shape} (samples,) - single binary label")
+        logger.info(f"  X shape: {X.shape}")
+        logger.info(f"  y shape: {y.shape} - three-class labels (0=DOWN, 1=SIDEWAYS, 2=UP)")
         logger.info(f"  ✓ No NaN values in final dataset")
         
         return X, y
 
     def generate_labels(self) -> np.ndarray:
         """
-        Generate single binary label for each sample.
+        Generate three-class labels for each sample.
         
         Label Logic:
         - Check price at position: current_index + prediction_horizon
-        - If HA_Close[current + horizon] > HA_Close[current] + threshold → Label = 1 (UP)
-        - Otherwise → Label = 0 (DOWN)
+        - price_change = HA_Close[current + horizon] - HA_Close[current]
+        - If price_change > +sideways_threshold → Label = 2 (UP)
+        - If |price_change| <= sideways_threshold → Label = 1 (SIDEWAYS)
+        - If price_change < -sideways_threshold → Label = 0 (DOWN)
         
         Returns:
-            Array of shape (num_samples,) with binary labels
+            Array of shape (num_samples,) with three-class labels
         """
         if self.ha_df is None:
             raise ValueError("Calculate Heikin-Ashi first")
         
-        logger.info(f"Generating single binary labels (checking price {self.prediction_horizon} steps ahead)...")
+        logger.info(f"Generating three-class labels (checking price {self.prediction_horizon} steps ahead)...")
+        logger.info(f"  Sideways threshold: ±{self.sideways_threshold} (±{self.sideways_threshold*100:.2f}%)")
         
         ha_close = self.ha_df['HA_Close'].values
         
-        # Check for NaN in HA_Close
         if np.isnan(ha_close).any():
             raise ValueError("NaN values found in HA_Close! Run _remove_nan_rows() first.")
         
@@ -415,33 +398,38 @@ class HeikinAshiDataGenerator:
         labels = []
         
         for i in range(num_samples):
-            # Current position is at the end of the sequence
             current_idx = i + self.sequence_length - 1
             current_close = ha_close[current_idx]
             
-            # Future position (prediction_horizon steps ahead)
             future_idx = current_idx + self.prediction_horizon
             future_close = ha_close[future_idx]
             
-            # Binary label: 1 if price goes up, 0 if it goes down
-            if future_close > current_close + self.pip_threshold:
-                label = 1  # UP / BULLISH
-            else:
+            # Calculate price change (absolute)
+            price_change = future_close - current_close
+            
+            # Three-class classification
+            if price_change > self.sideways_threshold:
+                label = 2  # UP / BULLISH
+            elif price_change < -self.sideways_threshold:
                 label = 0  # DOWN / BEARISH
+            else:
+                label = 1  # SIDEWAYS / NEUTRAL
             
             labels.append(label)
         
         labels_array = np.array(labels, dtype=np.float32)
         
         # Log label distribution
-        bullish_count = labels_array.sum()
+        down_count = (labels_array == 0).sum()
+        sideways_count = (labels_array == 1).sum()
+        up_count = (labels_array == 2).sum()
         total_count = len(labels_array)
-        bullish_pct = (bullish_count / total_count) * 100
         
         logger.info(f"Label Distribution:")
         logger.info(f"  - Total samples: {total_count}")
-        logger.info(f"  - UP (1):   {int(bullish_count)} ({bullish_pct:.1f}%)")
-        logger.info(f"  - DOWN (0): {int(total_count - bullish_count)} ({100 - bullish_pct:.1f}%)")
+        logger.info(f"  - DOWN (0):     {int(down_count)} ({down_count/total_count*100:.1f}%)")
+        logger.info(f"  - SIDEWAYS (1): {int(sideways_count)} ({sideways_count/total_count*100:.1f}%)")
+        logger.info(f"  - UP (2):       {int(up_count)} ({up_count/total_count*100:.1f}%)")
         
         return labels_array
     
@@ -453,7 +441,7 @@ class HeikinAshiDataGenerator:
         X, y = self.generate_sequences(include_indicators=include_indicators)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"training_data_seq{self.sequence_length}_horizon{self.prediction_horizon}_single_label.npz"
+        filename = f"training_data_seq{self.sequence_length}_horizon{self.prediction_horizon}_three_class.npz"
         filepath = os.path.join(output_dir, filename)
         
         np.savez(filepath, X=X, y=y)
@@ -468,20 +456,7 @@ class HeikinAshiDataGenerator:
                                        val_ratio: float = 0.2,
                                        test_ratio: float = 0.2,
                                        include_indicators: bool = False) -> Dict:
-        """
-        Generate and save train/val/test splits.
-        
-        Args:
-            output_dir: Directory to save splits
-            sequence_length: Override sequence length if provided
-            train_ratio: Proportion of data for training
-            val_ratio: Proportion of data for validation
-            test_ratio: Proportion of data for testing
-            include_indicators: Whether to include technical indicators
-            
-        Returns:
-            Dictionary with split information
-        """
+        """Generate and save train/val/test splits."""
         if sequence_length:
             self.sequence_length = sequence_length
         
@@ -518,11 +493,12 @@ class HeikinAshiDataGenerator:
         logger.info(f"  Test:  {len(X_test)} samples ({test_ratio*100:.0f}%)")
         
         # Label distribution per split
-        logger.info(f"\nLabel Distribution (UP/DOWN):")
+        logger.info(f"\nLabel Distribution (DOWN/SIDEWAYS/UP):")
         for name, labels in [('Train', y_train), ('Val', y_val), ('Test', y_test)]:
-            up_pct = (labels.sum() / len(labels)) * 100
-            down_pct = 100 - up_pct
-            logger.info(f"  {name:5s}: UP {up_pct:.1f}% | DOWN {down_pct:.1f}%")
+            down_pct = (labels == 0).sum() / len(labels) * 100
+            sideways_pct = (labels == 1).sum() / len(labels) * 100
+            up_pct = (labels == 2).sum() / len(labels) * 100
+            logger.info(f"  {name:5s}: DOWN {down_pct:.1f}% | SIDEWAYS {sideways_pct:.1f}% | UP {up_pct:.1f}%")
         
         logger.info(f"{'='*60}\n")
         
@@ -536,32 +512,21 @@ class HeikinAshiDataGenerator:
             'feature_dim': X.shape[2],
             'sequence_length': self.sequence_length,
             'prediction_horizon': self.prediction_horizon,
-            'label_type': 'single_binary'
+            'label_type': 'three_class',
+            'num_classes': 3
         }
     
     def save_features_to_csv(self, output_file: str = 'features_raw.csv',
-                     include_indicators: bool = True,
-                     max_samples: int = None) -> str:
-        """
-        Save raw (unstandardized) features to CSV for visualization.
-        
-        Args:
-            output_file: Path to output CSV file
-            include_indicators: Whether to include technical indicators
-            max_samples: Maximum number of samples to save (None = all)
-            
-        Returns:
-            Path to saved CSV file
-        """
+                            include_indicators: bool = True,
+                            max_samples: int = None) -> str:
+        """Save raw features to CSV for visualization."""
         logger.info("Generating raw features for CSV export...")
         
-        # Generate sequences WITHOUT standardization
         X, y = self.generate_sequences(
             include_indicators=include_indicators,
-            standardize=True  # Keep raw values
+            standardize=True
         )
         
-        # Limit samples if specified
         if max_samples is not None and max_samples < len(X):
             X = X[:max_samples]
             y = y[:max_samples]
@@ -569,129 +534,35 @@ class HeikinAshiDataGenerator:
         
         num_samples, seq_len, num_features = X.shape
         
-        # Create column names based on new structure
         columns = []
         
         if include_indicators:
-            # OHLC sequence: timesteps 0 to sequence_length-1
-            for t in range(seq_len - 1):  # seq_len - 1 because last timestep is indicators
+            for t in range(seq_len - 1):
                 for feat_name in ['HA_Open', 'HA_High', 'HA_Low', 'HA_Close']:
                     columns.append(f'timestep_{t}_{feat_name}')
             
-            # Indicator timestep (last timestep)
-            # Format: [RSI, MACD, MACD_Signal, padding(0)]
             columns.append('RSI')
             columns.append('MACD')
             columns.append('MACD_Signal')
-            columns.append('indicator_padding')  # The padded 0 value
+            columns.append('indicator_padding')
         else:
-            # OHLC only: all timesteps have same 4 features
             for t in range(seq_len):
                 for feat_name in ['HA_Open', 'HA_High', 'HA_Low', 'HA_Close']:
                     columns.append(f'timestep_{t}_{feat_name}')
         
-        # Add label column
         columns.append('label')
         
-        # Flatten X: (samples, seq_len, features) -> (samples, seq_len * features)
         X_flat = X.reshape(num_samples, -1)
         
-        # Create DataFrame
-        df = pd.DataFrame(X_flat, columns=columns[:-1])  # All feature columns
-        df['label'] = y  # Add label column
+        df = pd.DataFrame(X_flat, columns=columns[:-1])
+        df['label'] = y
         
-        # Add sample index as first column
         df.insert(0, 'sample_id', range(len(df)))
         
-        # Save to CSV
         df.to_csv(output_file, index=False)
         
-        if include_indicators:
-            logger.info(f"Saved {len(df)} samples to {output_file}")
-            logger.info(f"  - OHLC timesteps: {seq_len - 1} (4 features each)")
-            logger.info(f"  - Indicator timestep: 1 (RSI, MACD, MACD_Signal + padding)")
-            logger.info(f"  - Total columns: {len(columns)} (including sample_id and label)")
-        else:
-            logger.info(f"Saved {len(df)} samples to {output_file}")
-            logger.info(f"  - Sequence length: {seq_len}")
-            logger.info(f"  - Features per timestep: 4 (OHLC)")
-            logger.info(f"  - Total feature columns: {len(columns) - 1}")
-        
-        logger.info(f"  - Label distribution: UP={y.sum()}/{len(y)} ({y.sum()/len(y)*100:.1f}%)")
-        
-        return output_file
-
-    def save_features_summary_to_csv(self, output_file: str = 'features_summary.csv',
-                                    include_indicators: bool = True,
-                                    max_samples: int = None) -> str:
-        """
-        Save feature summary statistics to CSV (more compact than full features).
-        
-        Args:
-            output_file: Path to output CSV file
-            include_indicators: Whether to include technical indicators
-            max_samples: Maximum number of samples to save
-            
-        Returns:
-            Path to saved CSV file
-        """
-        logger.info("Generating feature summary statistics...")
-        
-        # Generate sequences WITHOUT standardization
-        X, y = self.generate_sequences(
-            include_indicators=include_indicators,
-            standardize=False
-        )
-        
-        if max_samples is not None and max_samples < len(X):
-            X = X[:max_samples]
-            y = y[:max_samples]
-        
-        num_samples, seq_len, num_features = X.shape
-        
-        # Calculate summary statistics for each sample
-        summary_data = []
-        
-        for i in range(num_samples):
-            sample = X[i]  # Shape: (seq_len, num_features)
-            
-            row = {'sample_id': i}
-            
-            # OHLC statistics (first 4 features)
-            ohlc = sample[:, :4]
-            row['ohlc_mean'] = ohlc.mean()
-            row['ohlc_std'] = ohlc.std()
-            row['ohlc_min'] = ohlc.min()
-            row['ohlc_max'] = ohlc.max()
-            
-            # Individual OHLC channel stats
-            for idx, name in enumerate(['open', 'high', 'low', 'close']):
-                row[f'{name}_mean'] = sample[:, idx].mean()
-                row[f'{name}_first'] = sample[0, idx]  # First timestep
-                row[f'{name}_last'] = sample[-1, idx]  # Last timestep
-                row[f'{name}_change'] = sample[-1, idx] - sample[0, idx]
-                row[f'{name}_change_pct'] = ((sample[-1, idx] / sample[0, idx]) - 1) * 100
-            
-            # Indicator statistics (if included)
-            if include_indicators and num_features > 4:
-                # RSI, MACD, MACD_Signal are at indices 4, 5, 6
-                row['rsi_last'] = sample[-1, 4]
-                row['macd_last'] = sample[-1, 5]
-                row['macd_signal_last'] = sample[-1, 6]
-            
-            # Label
-            row['label'] = y[i]
-            
-            summary_data.append(row)
-        
-        # Create DataFrame
-        df = pd.DataFrame(summary_data)
-        
-        # Save to CSV
-        df.to_csv(output_file, index=False)
-        
-        logger.info(f"Saved feature summary for {len(df)} samples to {output_file}")
-        logger.info(f"  - Summary columns: {len(df.columns)}")
+        logger.info(f"Saved {len(df)} samples to {output_file}")
+        logger.info(f"  - Label distribution: DOWN={int((y==0).sum())}, SIDEWAYS={int((y==1).sum())}, UP={int((y==2).sum())}")
         
         return output_file
 
@@ -700,41 +571,38 @@ def main():
     """Example usage of the data generator."""
     import argparse
     
-    parser = argparse.ArgumentParser(description='Generate forex training data (Single Label)')
+    parser = argparse.ArgumentParser(description='Generate forex training data (Three-Class: UP/SIDEWAYS/DOWN)')
     parser.add_argument('--data_file', type=str, default='USDJPY_H4.csv',
                        help='Input CSV file with OHLC data')
     parser.add_argument('--sequence_length', type=int, default=10,
                        help='Number of past candles for input')
     parser.add_argument('--prediction_horizon', type=int, default=10,
-                       help='Number of steps ahead to predict (formerly future_window)')
-    parser.add_argument('--output_dir', type=str, default='data_splits',
+                       help='Number of steps ahead to predict')
+    parser.add_argument('--sideways_threshold', type=float, default=0.3,
+                       help='Threshold for sideways classification (e.g., 0.001 = 0.1%% price change)')
+    parser.add_argument('--output_dir', type=str, default='data_splits_three_class',
                        help='Output directory for training data')
     parser.add_argument('--include_indicators', action='store_true',
-                       help='Include MACD/RSI in features',default=True)
+                       help='Include MACD/RSI in features', default=True)
     parser.add_argument('--train_ratio', type=float, default=0.8)
     parser.add_argument('--val_ratio', type=float, default=0.1)
     parser.add_argument('--test_ratio', type=float, default=0.1)
-    parser.add_argument('--pip_threshold', type=float, default=0.0,
-                       help='Minimum price change to consider UP')
-    
-    # NEW: CSV export options
     parser.add_argument('--save_csv', action='store_true',
                        help='Save raw features to CSV for visualization')
     parser.add_argument('--csv_output', type=str, default='features_raw.csv',
                        help='Output CSV filename for raw features')
     parser.add_argument('--csv_max_samples', type=int, default=1000,
-                       help='Maximum samples to export to CSV (default: 1000)')
-    parser.add_argument('--save_summary_csv', action='store_true',
-                       help='Save feature summary statistics to CSV')
+                       help='Maximum samples to export to CSV')
     
     args = parser.parse_args()
     
     print("="*60)
-    print("FOREX TRAINING DATA GENERATOR - SINGLE LABEL MODE")
+    print("FOREX TRAINING DATA GENERATOR - THREE-CLASS MODE")
     print("="*60)
-    print(f"Label Strategy: Binary classification")
-    print(f"  - UP (1)   if price[current + {args.prediction_horizon}] > price[current]")
-    print(f"  - DOWN (0) otherwise")
+    print(f"Label Strategy: Three-class classification")
+    print(f"  - UP (2)       if price_change > +{args.sideways_threshold}")
+    print(f"  - SIDEWAYS (1) if |price_change| <= {args.sideways_threshold}")
+    print(f"  - DOWN (0)     if price_change < -{args.sideways_threshold}")
     print("="*60)
     
     # Initialize generator
@@ -742,7 +610,7 @@ def main():
         data_file=args.data_file,
         sequence_length=args.sequence_length,
         prediction_horizon=args.prediction_horizon,
-        pip_threshold=args.pip_threshold
+        sideways_threshold=args.sideways_threshold
     )
     
     # Load and process data
@@ -751,19 +619,17 @@ def main():
     if args.include_indicators:
         generator.calculate_indicators()
 
-    print("\n" + "="*60)
-    print("EXPORTING RAW FEATURES TO CSV")
-    print("="*60)
-    csv_path = generator.save_features_to_csv(
-        output_file=args.csv_output,
-        include_indicators=args.include_indicators,
-        max_samples=args.csv_max_samples
-    )
-    print(f"Raw features saved to: {csv_path}")
-
-    # Save summary statistics to CSV if requested
-    
-    
+    # Export CSV if requested
+    if args.save_csv:
+        print("\n" + "="*60)
+        print("EXPORTING RAW FEATURES TO CSV")
+        print("="*60)
+        csv_path = generator.save_features_to_csv(
+            output_file=args.csv_output,
+            include_indicators=args.include_indicators,
+            max_samples=args.csv_max_samples
+        )
+        print(f"Raw features saved to: {csv_path}")
     
     # Generate and save splits
     result = generator.save_training_data_with_splits(
@@ -778,8 +644,10 @@ def main():
     print("DATA GENERATION COMPLETE")
     print("="*60)
     print(f"Label Type: {result['label_type']}")
+    print(f"Number of classes: {result['num_classes']}")
     print(f"Sequence length: {result['sequence_length']}")
     print(f"Prediction horizon: {result['prediction_horizon']} steps ahead")
+    print(f"Sideways threshold: ±{args.sideways_threshold}")
     print(f"Feature dimension: {result['feature_dim']}")
     print(f"Train samples: {result['train_samples']}")
     print(f"Val samples: {result['val_samples']}")

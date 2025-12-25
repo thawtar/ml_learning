@@ -74,7 +74,7 @@ def train_model(X_train, y_train, penalty: str = 'l2', C: float = 1.0):
    
     model = SVC(
         kernel='rbf',
-        C=C,
+        C=0.01,
         class_weight='balanced',
         probability=True,
         random_state=42,

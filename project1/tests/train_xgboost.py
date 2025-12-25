@@ -72,12 +72,21 @@ def train_model(X_train, y_train, penalty: str = 'l2', C: float = 1.0):
     print(f"  C (inverse regularization): {C}")
     
     
+    # model = XGBClassifier(
+    #     objective='binary:logistic',
+    #     learning_rate=0.01,
+    #     eval_metric='logloss',
+    #     random_state=42
+    # )
     model = XGBClassifier(
-        objective='binary:logistic',
-        learning_rate=0.01,
-        eval_metric='logloss',
-        random_state=42
-    )
+        max_depth=2,
+        n_estimators=50,
+        learning_rate=0.05,
+        subsample=0.6,
+        colsample_bytree=0.6,
+        reg_alpha=1.0,
+        reg_lambda=5.0
+)
     
     model.fit(X_train, y_train)
     
