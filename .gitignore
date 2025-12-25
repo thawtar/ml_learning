@@ -12,3 +12,6 @@
 *.npz
 __pycache__/
 *.joblib
+
+./models_lr
+*.txt

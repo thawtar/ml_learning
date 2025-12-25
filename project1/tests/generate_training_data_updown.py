@@ -259,11 +259,16 @@ class HeikinAshiDataGenerator:
         Generate input sequences and labels for training.
         
         Args:
-            include_indicators: Whether to include technical indicators
+            include_indicators: Whether to include technical indicators (as separate features)
             standardize: Whether to standardize OHLC sequences
             
         Returns:
-            X: Input sequences, shape (samples, sequence_length, features)
+            If include_indicators=False:
+                X: shape (samples, sequence_length, 4) - OHLC only
+            If include_indicators=True:
+                X: shape (samples, sequence_length + 1, 4) where:
+                - First sequence_length rows: OHLC sequence
+                - Last row: [RSI, MACD, MACD_Signal, 0] - indicators + padding
             y: Binary labels, shape (samples,)
         """
         if self.ha_df is None:
@@ -287,7 +292,6 @@ class HeikinAshiDataGenerator:
         ha_ohlc = self.ha_df[['HA_Open', 'HA_High', 'HA_Low', 'HA_Close']].values
         
         if include_indicators:
-            # Use RSI, MACD, MACD_Signal at each timestep
             indicators = self.indicators_df[['RSI', 'MACD', 'MACD_Signal']].values
         
         num_samples = len(ha_ohlc) - self.sequence_length - self.prediction_horizon
@@ -300,7 +304,6 @@ class HeikinAshiDataGenerator:
             )
         
         sequences = []
-        indicator_features = []
         
         for i in range(num_samples):
             # Extract OHLC sequence
@@ -308,23 +311,21 @@ class HeikinAshiDataGenerator:
             seq_end = i + self.sequence_length
             ohlc_seq = ha_ohlc[seq_start:seq_end].copy()
             
-            # Check for NaN in this sequence (extra safety check)
+            # Check for NaN in this sequence
             if np.isnan(ohlc_seq).any():
                 logger.warning(f"NaN detected in sequence {i}, skipping...")
                 continue
             
             if standardize:
-                # Standardize OHLC sequence (zero mean, unit variance)
+                # Standardize OHLC sequence
                 mean = ohlc_seq.mean()
                 std = ohlc_seq.std()
                 if std < 1e-8:
                     std = 1e-8
                 ohlc_seq = (ohlc_seq - mean) / std
             
-            sequences.append(ohlc_seq)
-            
             if include_indicators:
-                # Get indicators at current time step (end of sequence)
+                # Get indicators ONLY at current timestep (end of sequence)
                 current_idx = seq_end - 1
                 ind_vals = indicators[current_idx]
                 
@@ -333,25 +334,27 @@ class HeikinAshiDataGenerator:
                     logger.warning(f"NaN detected in indicators at index {current_idx}, skipping...")
                     continue
                 
-                indicator_features.append(ind_vals)
+                # Append indicators as an additional "timestep" row
+                # Shape: (sequence_length + 1, 4)
+                # First sequence_length rows: OHLC
+                # Last row: [RSI, MACD, MACD_Signal, 0]
+                indicator_row = np.concatenate([ind_vals, [0.0]]).reshape(1, 4)  # Pad to 4 features
+                full_sequence = np.vstack([ohlc_seq, indicator_row])
+                
+                sequences.append(full_sequence)
+            else:
+                sequences.append(ohlc_seq)
         
-        X_ohlc = np.array(sequences, dtype=np.float32)
+        X = np.array(sequences, dtype=np.float32)
         
         if include_indicators:
-            # Append indicators as additional features at each timestep
-            X_indicators = np.array(indicator_features, dtype=np.float32)
-            # Expand to (samples, sequence_length, num_indicators)
-            X_indicators_expanded = np.tile(
-                X_indicators[:, np.newaxis, :], 
-                (1, self.sequence_length, 1)
-            )
-            X = np.concatenate([X_ohlc, X_indicators_expanded], axis=2)
-            logger.info(f"  Features: 4 OHLC + 3 indicators = 7 per timestep")
+            logger.info(f"  Features: OHLC sequence + indicators as additional row")
+            logger.info(f"  OHLC timesteps: {self.sequence_length}, Indicator timestep: 1")
+            logger.info(f"  Total sequence length: {self.sequence_length + 1}")
         else:
-            X = X_ohlc
             logger.info(f"  Features: 4 OHLC per timestep")
         
-        # Generate single binary label for each sample
+        # Generate labels
         y = self.generate_labels()
         
         # Ensure X and y have the same length
@@ -369,7 +372,7 @@ class HeikinAshiDataGenerator:
             raise ValueError(f"Final check failed: {nan_count} NaN values found in y!")
         
         logger.info(f"Generated {len(X)} samples (after NaN removal)")
-        logger.info(f"  X shape: {X.shape} (samples, sequence_length, features)")
+        logger.info(f"  X shape: {X.shape} (samples, sequence_length{'+1 if indicators' if include_indicators else ''}, features=4)")
         logger.info(f"  y shape: {y.shape} (samples,) - single binary label")
         logger.info(f"  ✓ No NaN values in final dataset")
         
@@ -535,8 +538,8 @@ class HeikinAshiDataGenerator:
         }
     
     def save_features_to_csv(self, output_file: str = 'features_raw.csv',
-                         include_indicators: bool = True,
-                         max_samples: int = None) -> str:
+                     include_indicators: bool = True,
+                     max_samples: int = None) -> str:
         """
         Save raw (unstandardized) features to CSV for visualization.
         
@@ -553,7 +556,7 @@ class HeikinAshiDataGenerator:
         # Generate sequences WITHOUT standardization
         X, y = self.generate_sequences(
             include_indicators=include_indicators,
-            standardize=False  # Keep raw values
+            standardize=True  # Keep raw values
         )
         
         # Limit samples if specified
@@ -564,16 +567,26 @@ class HeikinAshiDataGenerator:
         
         num_samples, seq_len, num_features = X.shape
         
-        # Create column names
-        feature_names = ['HA_Open', 'HA_High', 'HA_Low', 'HA_Close']
-        if include_indicators:
-            feature_names.extend(['RSI', 'MACD', 'MACD_Signal'])
-        
-        # Build column names: timestep_0_HA_Open, timestep_0_HA_High, etc.
+        # Create column names based on new structure
         columns = []
-        for t in range(seq_len):
-            for feat_idx, feat_name in enumerate(feature_names):
-                columns.append(f'timestep_{t}_{feat_name}')
+        
+        if include_indicators:
+            # OHLC sequence: timesteps 0 to sequence_length-1
+            for t in range(seq_len - 1):  # seq_len - 1 because last timestep is indicators
+                for feat_name in ['HA_Open', 'HA_High', 'HA_Low', 'HA_Close']:
+                    columns.append(f'timestep_{t}_{feat_name}')
+            
+            # Indicator timestep (last timestep)
+            # Format: [RSI, MACD, MACD_Signal, padding(0)]
+            columns.append('RSI')
+            columns.append('MACD')
+            columns.append('MACD_Signal')
+            columns.append('indicator_padding')  # The padded 0 value
+        else:
+            # OHLC only: all timesteps have same 4 features
+            for t in range(seq_len):
+                for feat_name in ['HA_Open', 'HA_High', 'HA_Low', 'HA_Close']:
+                    columns.append(f'timestep_{t}_{feat_name}')
         
         # Add label column
         columns.append('label')
@@ -591,10 +604,17 @@ class HeikinAshiDataGenerator:
         # Save to CSV
         df.to_csv(output_file, index=False)
         
-        logger.info(f"Saved {len(df)} samples with {len(columns)} columns to {output_file}")
-        logger.info(f"  - Sequence length: {seq_len}")
-        logger.info(f"  - Features per timestep: {num_features}")
-        logger.info(f"  - Total feature columns: {len(columns) - 1}")
+        if include_indicators:
+            logger.info(f"Saved {len(df)} samples to {output_file}")
+            logger.info(f"  - OHLC timesteps: {seq_len - 1} (4 features each)")
+            logger.info(f"  - Indicator timestep: 1 (RSI, MACD, MACD_Signal + padding)")
+            logger.info(f"  - Total columns: {len(columns)} (including sample_id and label)")
+        else:
+            logger.info(f"Saved {len(df)} samples to {output_file}")
+            logger.info(f"  - Sequence length: {seq_len}")
+            logger.info(f"  - Features per timestep: 4 (OHLC)")
+            logger.info(f"  - Total feature columns: {len(columns) - 1}")
+        
         logger.info(f"  - Label distribution: UP={y.sum()}/{len(y)} ({y.sum()/len(y)*100:.1f}%)")
         
         return output_file

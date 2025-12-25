@@ -1,5 +1,5 @@
 """
-Logistic Regression Baseline for Forex Prediction - Single Label Version
+XGBoost Baseline for Forex Prediction - Single Label Version
 ==========================================================================
 Minimalist training script using scikit-learn for binary classification.
 Serves as a benchmark for comparing with neural network models.
@@ -11,7 +11,8 @@ import numpy as np
 import argparse
 import os
 from datetime import datetime
-from sklearn.linear_model import LogisticRegression
+
+from xgboost import XGBClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
     accuracy_score, 
@@ -48,14 +49,14 @@ def load_data(data_dir: str = 'data_splits'):
 
 
 def flatten_sequences(X: np.ndarray) -> np.ndarray:
-    """Flatten 3D sequences to 2D for logistic regression."""
+    """Flatten 3D sequences to 2D for XGBoost."""
     # X: (samples, seq_len, features) -> (samples, seq_len * features)
     return X.reshape(X.shape[0], -1)
 
 
 def train_model(X_train, y_train, penalty: str = 'l2', C: float = 1.0):
     """
-    Train logistic regression model.
+    Train XGBoost model.
     
     Args:
         X_train: Training features (already flattened and scaled)
@@ -66,17 +67,16 @@ def train_model(X_train, y_train, penalty: str = 'l2', C: float = 1.0):
     Returns:
         Trained model
     """
-    print(f"\nTraining Logistic Regression...")
+    print(f"\nTraining XGBoost...")
     print(f"  Regularization: {penalty.upper()}")
     print(f"  C (inverse regularization): {C}")
     
-    model = LogisticRegression(
-        penalty=penalty,
-        C=C,
-        solver='lbfgs' if penalty == 'l2' else 'saga',
-        max_iter=1000,
-        random_state=42,
-        class_weight='balanced'  # Handle class imbalance
+    
+    model = XGBClassifier(
+        objective='binary:logistic',
+        learning_rate=0.01,
+        eval_metric='logloss',
+        random_state=42
     )
     
     model.fit(X_train, y_train)
@@ -89,7 +89,7 @@ def evaluate_model(model, scaler, X, y, split_name: str = "Test"):
     Comprehensive model evaluation.
     
     Args:
-        model: Trained logistic regression model
+        model: Trained XGBoost model
         scaler: Fitted StandardScaler
         X: Features (flattened)
         y: Labels
@@ -265,7 +265,7 @@ def plot_results(train_results, val_results, test_results, output_dir):
     plt.tight_layout()
     
     # Save plot
-    plot_path = os.path.join(output_dir, 'logistic_regression_results.png')
+    plot_path = os.path.join(output_dir, 'xgboost_results.png')
     plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.close()
     
@@ -274,13 +274,13 @@ def plot_results(train_results, val_results, test_results, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Train Logistic Regression for Binary Forex Prediction'
+        description='Train XGBoost for Binary Forex Prediction'
     )
     parser.add_argument('--data_dir', type=str, default='data_splits', 
                        help='Data directory')
     parser.add_argument('--penalty', type=str, default='l2', 
                        choices=['l1', 'l2'], help='Regularization type')
-    parser.add_argument('--C', type=float, default=1, 
+    parser.add_argument('--C', type=float, default=1.0, 
                        help='Inverse regularization strength')
     parser.add_argument('--output_dir', type=str, default='models_lr', 
                        help='Model output directory')
@@ -289,7 +289,7 @@ def main():
     args = parser.parse_args()
     
     print("="*60)
-    print("LOGISTIC REGRESSION - FOREX BINARY PREDICTION")
+    print("XGBOOST - FOREX BINARY PREDICTION")
     print("="*60)
     print("Task: Predict UP (1) or DOWN (0) movement")
     print("="*60)
@@ -337,7 +337,7 @@ def main():
     
     # Save model
     os.makedirs(args.output_dir, exist_ok=True)
-    model_path = os.path.join(args.output_dir, 'logistic_regression_model.joblib')
+    model_path = os.path.join(args.output_dir, 'xgboost_model.joblib')
     joblib.dump({'model': model, 'scaler': scaler}, model_path)
     print(f"\nModel saved to: {model_path}")
     
@@ -346,7 +346,7 @@ def main():
     results_file = os.path.join(args.output_dir, f'results_{timestamp}.txt')
     
     with open(results_file, 'w') as f:
-        f.write("LOGISTIC REGRESSION - BINARY FOREX PREDICTION\n")
+        f.write("XGBOOST - BINARY FOREX PREDICTION\n")
         f.write("="*60 + "\n")
         f.write(f"Timestamp: {datetime.now()}\n")
         f.write(f"Regularization: {args.penalty.upper()}, C={args.C}\n")
@@ -368,13 +368,13 @@ def main():
         f.write("FEATURE IMPORTANCE (Top 20)\n")
         f.write("-"*60 + "\n")
         
-        # Get feature importance (coefficients)
-        coef = model.coef_[0]
-        feature_importance = np.abs(coef)
-        top_indices = np.argsort(feature_importance)[-20:][::-1]
+        # # Get feature importance (coefficients)
+        # coef = model.coef_[0]
+        # feature_importance = np.abs(coef)
+        # top_indices = np.argsort(feature_importance)[-20:][::-1]
         
-        for idx in top_indices:
-            f.write(f"  Feature {idx:4d}: {coef[idx]:+.6f}\n")
+        # for idx in top_indices:
+        #     f.write(f"  Feature {idx:4d}: {coef[idx]:+.6f}\n")
     
     print(f"Results saved to: {results_file}")
     
