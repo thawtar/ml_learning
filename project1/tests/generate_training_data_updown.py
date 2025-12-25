@@ -188,10 +188,193 @@ class HeikinAshiDataGenerator:
             'ATR': atr
         })
         
+        # Count NaN values before dropping
+        nan_counts = self.indicators_df.isnull().sum()
+        total_nans = nan_counts.sum()
+        
+        if total_nans > 0:
+            logger.warning(f"Found {total_nans} NaN values in indicators:")
+            for col, count in nan_counts.items():
+                if count > 0:
+                    logger.warning(f"  - {col}: {count} NaN values")
+        
         logger.info("Indicators calculated: RSI, MACD, MACD_Signal, MACD_Histogram, ATR")
         
         return self.indicators_df
     
+    def _remove_nan_rows(self) -> None:
+        """
+        Remove rows with NaN values from both ha_df and indicators_df.
+        Ensures alignment between the two DataFrames.
+        """
+        if self.ha_df is None:
+            raise ValueError("Calculate Heikin-Ashi first")
+        
+        initial_length = len(self.ha_df)
+        
+        # If indicators are being used, find rows with NaN
+        if self.indicators_df is not None:
+            # Find indices with NaN in indicators
+            nan_mask = self.indicators_df.isnull().any(axis=1)
+            valid_indices = ~nan_mask
+            
+            num_nan_rows = nan_mask.sum()
+            
+            if num_nan_rows > 0:
+                logger.info(f"Removing {num_nan_rows} rows with NaN values from indicators...")
+                
+                # Drop rows from both DataFrames
+                self.ha_df = self.ha_df[valid_indices].reset_index(drop=True)
+                self.indicators_df = self.indicators_df[valid_indices].reset_index(drop=True)
+                
+                # Also update the original df to maintain alignment
+                if self.df is not None:
+                    self.df = self.df[valid_indices].reset_index(drop=True)
+                
+                logger.info(f"  - Rows before: {initial_length}")
+                logger.info(f"  - Rows after: {len(self.ha_df)}")
+                logger.info(f"  - Rows removed: {num_nan_rows}")
+            else:
+                logger.info("No NaN values found in indicators")
+        else:
+            # Check ha_df for NaN even if no indicators
+            nan_mask = self.ha_df.isnull().any(axis=1)
+            valid_indices = ~nan_mask
+            
+            num_nan_rows = nan_mask.sum()
+            
+            if num_nan_rows > 0:
+                logger.info(f"Removing {num_nan_rows} rows with NaN values from Heikin-Ashi data...")
+                self.ha_df = self.ha_df[valid_indices].reset_index(drop=True)
+                
+                if self.df is not None:
+                    self.df = self.df[valid_indices].reset_index(drop=True)
+                
+                logger.info(f"  - Rows before: {initial_length}")
+                logger.info(f"  - Rows after: {len(self.ha_df)}")
+    
+    def generate_sequences(self, include_indicators: bool = True,
+                      standardize: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Generate input sequences and labels for training.
+        
+        Args:
+            include_indicators: Whether to include technical indicators
+            standardize: Whether to standardize OHLC sequences
+            
+        Returns:
+            X: Input sequences, shape (samples, sequence_length, features)
+            y: Binary labels, shape (samples,)
+        """
+        if self.ha_df is None:
+            self.calculate_heikin_ashi()
+        if include_indicators and self.indicators_df is None:
+            self.calculate_indicators()
+        
+        # CRITICAL: Remove NaN rows before generating sequences
+        self._remove_nan_rows()
+        
+        logger.info("Generating training sequences...")
+        
+        # Verify no NaN values remain
+        if self.ha_df.isnull().any().any():
+            raise ValueError("NaN values still present in Heikin-Ashi data after cleaning!")
+        
+        if include_indicators and self.indicators_df.isnull().any().any():
+            raise ValueError("NaN values still present in indicators after cleaning!")
+        
+        # Get data arrays
+        ha_ohlc = self.ha_df[['HA_Open', 'HA_High', 'HA_Low', 'HA_Close']].values
+        
+        if include_indicators:
+            # Use RSI, MACD, MACD_Signal at each timestep
+            indicators = self.indicators_df[['RSI', 'MACD', 'MACD_Signal']].values
+        
+        num_samples = len(ha_ohlc) - self.sequence_length - self.prediction_horizon
+        
+        if num_samples <= 0:
+            raise ValueError(
+                f"Insufficient data after removing NaN rows. "
+                f"Available: {len(ha_ohlc)}, "
+                f"Required: {self.sequence_length + self.prediction_horizon + 1}"
+            )
+        
+        sequences = []
+        indicator_features = []
+        
+        for i in range(num_samples):
+            # Extract OHLC sequence
+            seq_start = i
+            seq_end = i + self.sequence_length
+            ohlc_seq = ha_ohlc[seq_start:seq_end].copy()
+            
+            # Check for NaN in this sequence (extra safety check)
+            if np.isnan(ohlc_seq).any():
+                logger.warning(f"NaN detected in sequence {i}, skipping...")
+                continue
+            
+            if standardize:
+                # Standardize OHLC sequence (zero mean, unit variance)
+                mean = ohlc_seq.mean()
+                std = ohlc_seq.std()
+                if std < 1e-8:
+                    std = 1e-8
+                ohlc_seq = (ohlc_seq - mean) / std
+            
+            sequences.append(ohlc_seq)
+            
+            if include_indicators:
+                # Get indicators at current time step (end of sequence)
+                current_idx = seq_end - 1
+                ind_vals = indicators[current_idx]
+                
+                # Check for NaN in indicators
+                if np.isnan(ind_vals).any():
+                    logger.warning(f"NaN detected in indicators at index {current_idx}, skipping...")
+                    continue
+                
+                indicator_features.append(ind_vals)
+        
+        X_ohlc = np.array(sequences, dtype=np.float32)
+        
+        if include_indicators:
+            # Append indicators as additional features at each timestep
+            X_indicators = np.array(indicator_features, dtype=np.float32)
+            # Expand to (samples, sequence_length, num_indicators)
+            X_indicators_expanded = np.tile(
+                X_indicators[:, np.newaxis, :], 
+                (1, self.sequence_length, 1)
+            )
+            X = np.concatenate([X_ohlc, X_indicators_expanded], axis=2)
+            logger.info(f"  Features: 4 OHLC + 3 indicators = 7 per timestep")
+        else:
+            X = X_ohlc
+            logger.info(f"  Features: 4 OHLC per timestep")
+        
+        # Generate single binary label for each sample
+        y = self.generate_labels()
+        
+        # Ensure X and y have the same length
+        min_length = min(len(X), len(y))
+        X = X[:min_length]
+        y = y[:min_length]
+        
+        # Final NaN check
+        if np.isnan(X).any():
+            nan_count = np.isnan(X).sum()
+            raise ValueError(f"Final check failed: {nan_count} NaN values found in X!")
+        
+        if np.isnan(y).any():
+            nan_count = np.isnan(y).sum()
+            raise ValueError(f"Final check failed: {nan_count} NaN values found in y!")
+        
+        logger.info(f"Generated {len(X)} samples (after NaN removal)")
+        logger.info(f"  X shape: {X.shape} (samples, sequence_length, features)")
+        logger.info(f"  y shape: {y.shape} (samples,) - single binary label")
+        logger.info(f"  ✓ No NaN values in final dataset")
+        
+        return X, y
+
     def generate_labels(self) -> np.ndarray:
         """
         Generate single binary label for each sample.
@@ -210,7 +393,19 @@ class HeikinAshiDataGenerator:
         logger.info(f"Generating single binary labels (checking price {self.prediction_horizon} steps ahead)...")
         
         ha_close = self.ha_df['HA_Close'].values
+        
+        # Check for NaN in HA_Close
+        if np.isnan(ha_close).any():
+            raise ValueError("NaN values found in HA_Close! Run _remove_nan_rows() first.")
+        
         num_samples = len(ha_close) - self.sequence_length - self.prediction_horizon
+        
+        if num_samples <= 0:
+            raise ValueError(
+                f"Insufficient data for label generation. "
+                f"Available: {len(ha_close)}, "
+                f"Required: {self.sequence_length + self.prediction_horizon + 1}"
+            )
         
         labels = []
         
@@ -244,86 +439,6 @@ class HeikinAshiDataGenerator:
         logger.info(f"  - DOWN (0): {int(total_count - bullish_count)} ({100 - bullish_pct:.1f}%)")
         
         return labels_array
-    
-    def generate_sequences(self, include_indicators: bool = True,
-                          standardize: bool = True) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Generate input sequences and labels for training.
-        
-        Args:
-            include_indicators: Whether to include technical indicators
-            standardize: Whether to standardize OHLC sequences
-            
-        Returns:
-            X: Input sequences, shape (samples, sequence_length, features)
-            y: Binary labels, shape (samples,)
-        """
-        if self.ha_df is None:
-            self.calculate_heikin_ashi()
-        if include_indicators and self.indicators_df is None:
-            self.calculate_indicators()
-        
-        logger.info("Generating training sequences...")
-        
-        # Get data arrays
-        ha_ohlc = self.ha_df[['HA_Open', 'HA_High', 'HA_Low', 'HA_Close']].values
-        
-        if include_indicators:
-            # Use RSI, MACD, MACD_Signal at each timestep
-            indicators = self.indicators_df[['RSI', 'MACD', 'MACD_Signal']].values
-        
-        num_samples = len(ha_ohlc) - self.sequence_length - self.prediction_horizon
-        
-        sequences = []
-        indicator_features = []
-        
-        for i in range(num_samples):
-            # Extract OHLC sequence
-            seq_start = i
-            seq_end = i + self.sequence_length
-            ohlc_seq = ha_ohlc[seq_start:seq_end].copy()
-            
-            if standardize:
-                # Standardize OHLC sequence (zero mean, unit variance)
-                mean = ohlc_seq.mean()
-                std = ohlc_seq.std()
-                if std < 1e-8:
-                    std = 1e-8
-                ohlc_seq = (ohlc_seq - mean) / std
-            
-            sequences.append(ohlc_seq)
-            
-            if include_indicators:
-                # Get indicators at current time step (end of sequence)
-                current_idx = seq_end - 1
-                ind_vals = indicators[current_idx]
-                indicator_features.append(ind_vals)
-        
-        X_ohlc = np.array(sequences, dtype=np.float32)
-        
-        if include_indicators:
-            # Append indicators as additional features at each timestep
-            # Broadcast indicator values across sequence
-            X_indicators = np.array(indicator_features, dtype=np.float32)
-            # Expand to (samples, sequence_length, num_indicators)
-            X_indicators_expanded = np.tile(
-                X_indicators[:, np.newaxis, :], 
-                (1, self.sequence_length, 1)
-            )
-            X = np.concatenate([X_ohlc, X_indicators_expanded], axis=2)
-            logger.info(f"  Features: 4 OHLC + 3 indicators = 7 per timestep")
-        else:
-            X = X_ohlc
-            logger.info(f"  Features: 4 OHLC per timestep")
-        
-        # Generate single binary label for each sample
-        y = self.generate_labels()
-        
-        logger.info(f"Generated {len(X)} samples")
-        logger.info(f"  X shape: {X.shape} (samples, sequence_length, features)")
-        logger.info(f"  y shape: {y.shape} (samples,) - single binary label")
-        
-        return X, y
     
     def save_training_data(self, output_dir: str = 'data',
                           include_indicators: bool = True) -> Dict[str, str]:
