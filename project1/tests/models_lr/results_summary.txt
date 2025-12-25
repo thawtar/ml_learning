@@ -1,0 +1,10 @@
+Logistic Regression Results - 2025-12-25 13:39:12.893601
+Regularization: L2, C=1.0
+Features: 40
+
+Candle 1: Acc=0.6618 F1=0.6836
+Candle 2: Acc=0.5979 F1=0.6286
+Candle 3: Acc=0.5779 F1=0.6168
+Candle 4: Acc=0.5706 F1=0.6074
+
+Average: Acc=0.6020 F1=0.6341

@@ -1,0 +1,53 @@
+LOGISTIC REGRESSION - BINARY FOREX PREDICTION
+============================================================
+Timestamp: 2025-12-25 13:51:00.690738
+Regularization: L2, C=1.0
+Features: 40
+
+RESULTS SUMMARY
+------------------------------------------------------------
+
+Train Set:
+  Accuracy:  0.5356
+  Precision: 0.5413
+  Recall:    0.5211
+  F1-Score:  0.5310
+  ROC-AUC:   0.5530
+
+Val Set:
+  Accuracy:  0.5371
+  Precision: 0.5893
+  Recall:    0.5346
+  F1-Score:  0.5606
+  ROC-AUC:   0.5586
+
+Test Set:
+  Accuracy:  0.5482
+  Precision: 0.5982
+  Recall:    0.5433
+  F1-Score:  0.5694
+  ROC-AUC:   0.5596
+
+============================================================
+FEATURE IMPORTANCE (Top 20)
+------------------------------------------------------------
+  Feature   39: +0.671318
+  Feature   35: -0.405456
+  Feature   31: +0.269912
+  Feature   36: -0.209451
+  Feature   32: +0.180126
+  Feature   38: -0.162419
+  Feature   37: -0.153081
+  Feature   27: -0.072668
+  Feature   30: -0.070048
+  Feature   29: -0.049080
+  Feature   23: +0.047212
+  Feature   33: +0.045401
+  Feature   15: +0.039349
+  Feature   28: -0.039038
+  Feature   22: -0.035111
+  Feature    0: -0.034779
+  Feature   24: +0.034756
+  Feature   26: -0.034589
+  Feature   10: -0.034502
+  Feature   16: +0.030615

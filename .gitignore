@@ -11,3 +11,4 @@
 .DS_Store
 *.npz
 __pycache__/
+*.joblib
