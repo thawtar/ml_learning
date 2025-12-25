@@ -6,3 +6,8 @@
 *.h5
 
 *.xlsx
+
+*.DS_Store
+.DS_Store
+*.npz
+__pycache__/
