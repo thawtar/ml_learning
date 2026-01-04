@@ -1,9 +1,12 @@
 *.jpg
 *.png
 
+# data files
 *.csv
 *.log
 *.h5
+*.data
+*.names
 
 *.xlsx
 
