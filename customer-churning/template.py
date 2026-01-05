@@ -20,13 +20,13 @@ def create_direcotries():
         'tests'
     ]
     files ={
-        'data': ['raw', 'processed'],
+        'data': [],
         'notebooks': [],
         'models': [],
         'api': [],
         'config': [],
         'tests': [],
-        'src': ['__init__.py', 'preprocess.py', 
+        'src': ['__init__.py', 'preprocess.py', 'dataloader.py',
                 'train.py', 'evaluate.py', 'predict.py'
                 , 'utils.py', 'monitor.py'] 
     }
