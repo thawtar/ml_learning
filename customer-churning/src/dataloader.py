@@ -1,4 +1,4 @@
-from config import data_conf
+from config import config
 
 # File to load data
 from logging import Logger
@@ -12,9 +12,6 @@ import yaml
 # Initialize logger
 logger = Logger(__name__)
 
-
-
-
 class DataLoader:
     def __init__(self,file_path=None):
         
@@ -23,19 +20,19 @@ class DataLoader:
 
     def load_data(self):
         print("Loading data...")
-        source = data_conf['source']
+        source = config['data']['source']
         if source=='local':
             if not self.file_path:
-                data_path = data_conf['local']['data_path']
+                data_path = config['data']['local']['data_path']
             else:
                 data_path = self.file_path
             logger.info(f"Loading data from local path: {data_path}")
             data = pd.read_csv(data_path)
             return data
         elif source=='gdrive':
-            file_id = data_conf['gdrive']['file_id']
-            credentials_path = data_conf['gdrive']['credentials_path']
-            token_path = data_conf['gdrive']['token_path']
+            file_id = config['data']['gdrive']['file_id']
+            credentials_path = config['data']['gdrive']['credentials_path']
+            token_path = config['data']['gdrive']['token_path']
             logger.info(f"Loading data from Google Drive with file ID: {file_id}")
 
             gauth = GoogleAuth()
