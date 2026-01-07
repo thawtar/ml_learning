@@ -1,0 +1,3 @@
+model:
+  C: 1.0
+  penalty: l2
