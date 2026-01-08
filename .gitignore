@@ -8,6 +8,15 @@
 *.data
 *.names
 
+# model files
+*.hdf5
+*.model
+*.pth
+
+# encoder settings
+*.pkl
+*.sav
+
 *.xlsx
 
 *.DS_Store

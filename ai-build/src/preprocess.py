@@ -6,8 +6,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 import joblib
 
-DATA_PATH = "data/customer_churn_data.csv"
-OUTPUT_DIR = "data_processed"
+DATA_PATH = "../data/customer_churn_data.csv"
+OUTPUT_DIR = "../data_processed"
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
 
@@ -64,6 +64,17 @@ def scale_features(X: pd.DataFrame, scaler: StandardScaler = None) -> tuple[pd.D
 
     return X, scaler
 
+# def split_and_scale(X: pd.DataFrame, y: pd.Series, test_size: float, random_state: int) -> tuple:
+#     """Split data into train and test sets and scale features."""
+#     X_train, X_test, y_train, y_test = train_test_split(
+#         X, y, test_size=test_size, random_state=random_state, stratify=y
+#     )
+    
+#     X_train, scaler = scale_features(X_train)
+#     X_test, _ = scale_features(X_test, scaler)
+
+#     return X_train, X_test, y_train, y_test, scaler
+
 
 def preprocess() -> None:
     """Run full preprocessing pipeline."""
@@ -86,14 +97,17 @@ def preprocess() -> None:
     X = df.drop(columns=["Churn"])
     y = df["Churn"]
 
-    print("Scaling numerical features...")
-    X, scaler = scale_features(X)
+    # print("Scaling numerical features...")
+    # X, scaler = scale_features(X)
 
     print("Splitting into train/test sets...")
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
     )
 
+    print("Scaling numerical features...")
+    X_train, scaler = scale_features(X_train)
+    X_test, _ = scale_features(X_test, scaler)
     # Create output directory
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
