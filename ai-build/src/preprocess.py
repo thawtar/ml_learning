@@ -10,6 +10,8 @@ DATA_PATH = "../data/customer_churn_data.csv"
 OUTPUT_DIR = "../data_processed"
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
+VAL_SIZE = 0.2
+gap = 5
 
 
 def load_data(path: str) -> pd.DataFrame:
@@ -41,8 +43,8 @@ def encode_features(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     categorical_cols = df.select_dtypes(include=["object"]).columns.tolist()
 
     # Remove target from categorical columns if present
-    if "Churn" in categorical_cols:
-        categorical_cols.remove("Churn")
+    # if "Churn" in categorical_cols:
+    #     categorical_cols.remove("Churn")
 
     for col in categorical_cols:
         le = LabelEncoder()
@@ -64,17 +66,6 @@ def scale_features(X: pd.DataFrame, scaler: StandardScaler = None) -> tuple[pd.D
 
     return X, scaler
 
-# def split_and_scale(X: pd.DataFrame, y: pd.Series, test_size: float, random_state: int) -> tuple:
-#     """Split data into train and test sets and scale features."""
-#     X_train, X_test, y_train, y_test = train_test_split(
-#         X, y, test_size=test_size, random_state=random_state, stratify=y
-#     )
-    
-#     X_train, scaler = scale_features(X_train)
-#     X_test, _ = scale_features(X_test, scaler)
-
-#     return X_train, X_test, y_train, y_test, scaler
-
 
 def preprocess() -> None:
     """Run full preprocessing pipeline."""
@@ -82,32 +73,39 @@ def preprocess() -> None:
     df = load_data(DATA_PATH)
     print(f"Loaded {len(df)} rows")
 
-    print("Cleaning data...")
-    df = clean_data(df)
+    n_train = int(len(df) * (1 - TEST_SIZE - VAL_SIZE)) - 2* gap
+    n_val = int(len(df) * VAL_SIZE)
+    n_test = len(df) - n_train - n_val + gap
 
-    print("Encoding categorical features...")
-    df, encoders = encode_features(df)
+    df_train = df.iloc[:n_train]
+    df_val = df.iloc[n_train+gap:n_train +gap+ n_val]
+    df_test = df.iloc[n_train +gap + n_val:]
 
-    # Encode target variable
-    target_encoder = LabelEncoder()
-    df["Churn"] = target_encoder.fit_transform(df["Churn"])
-    encoders["Churn"] = target_encoder
+    print(f"Train set: {len(df_train)} samples")
+    print(f"Validation set: {len(df_val)} samples")
+    print(f"Test set: {len(df_test)} samples")
+    
+    df_train = df_train.reset_index(drop=True)
+    df_val = df_val.reset_index(drop=True)
+    df_test = df_test.reset_index(drop=True)
+    
+    df_train = clean_data(df_train)
+    df_val = clean_data(df_val)
+    df_test = clean_data(df_test)
+    
+    df_train, train_encoders = encode_features(df_train)
+    df_val, val_encoders = encode_features(df_val)
+    df_test, test_encoders = encode_features(df_test)
 
-    # Split features and target
-    X = df.drop(columns=["Churn"])
-    y = df["Churn"]
+    X_train, scaler = scale_features(df_train.drop(columns=["Churn"]))
+    X_val, _ = scale_features(df_val.drop(columns=["Churn"]), scaler)
+    X_test, _ = scale_features(df_test.drop(columns=["Churn"]), scaler)
 
-    # print("Scaling numerical features...")
-    # X, scaler = scale_features(X)
+    
+    y_train = df_train[["Churn"]]
+    y_val = df_val[["Churn"]]
+    y_test = df_test[["Churn"]]
 
-    print("Splitting into train/test sets...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
-    )
-
-    print("Scaling numerical features...")
-    X_train, scaler = scale_features(X_train)
-    X_test, _ = scale_features(X_test, scaler)
     # Create output directory
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -119,7 +117,7 @@ def preprocess() -> None:
     y_test.to_csv(f"{OUTPUT_DIR}/y_test.csv", index=False)
 
     # Save encoders and scaler for serving
-    joblib.dump(encoders, f"{OUTPUT_DIR}/encoders.pkl")
+    joblib.dump(train_encoders, f"{OUTPUT_DIR}/encoders.pkl")
     joblib.dump(scaler, f"{OUTPUT_DIR}/scaler.pkl")
 
     print(f"Train set: {len(X_train)} samples")

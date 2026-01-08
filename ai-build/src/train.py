@@ -8,9 +8,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import joblib
 
-DATA_DIR = "data_processed"
-MODEL_DIR = "models"
-PARAMS_FILE = "params.yaml"
+DATA_DIR = "../data_processed"
+MODEL_DIR = "../models"
+PARAMS_FILE = "../params.yaml"
 
 
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
