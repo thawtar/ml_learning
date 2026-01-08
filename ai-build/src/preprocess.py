@@ -88,9 +88,11 @@ def preprocess() -> None:
     n_val = int(len(df) * VAL_SIZE)
     n_test = len(df) - n_train - n_val + gap
 
-    df_train = df.iloc[:n_train]
-    df_val = df.iloc[n_train+gap:n_train +gap+ n_val]
-    df_test = df.iloc[n_train +gap + n_val:]
+    df_train, df_test = train_test_split(df, test_size=TEST_SIZE, random_state=RANDOM_STATE,)
+    df_train, df_val = train_test_split(df_train, test_size=VAL_SIZE/(1 - TEST_SIZE), random_state=RANDOM_STATE)
+    df_train = df_train.reset_index(drop=True)
+    df_val = df_val.reset_index(drop=True)
+    df_test = df_test.reset_index(drop=True)
 
     print(f"Train set: {len(df_train)} samples")
     print(f"Validation set: {len(df_val)} samples")
@@ -112,10 +114,9 @@ def preprocess() -> None:
     X_val, _ = scale_features(df_val.drop(columns=["Churn"]), scaler)
     X_test, _ = scale_features(df_test.drop(columns=["Churn"]), scaler)
 
-    
-    y_train = df_train[["Churn"]]
-    y_val = df_val[["Churn"]]
-    y_test = df_test[["Churn"]]
+    y_train = df_train["Churn"]
+    y_val = df_val["Churn"]
+    y_test = df_test["Churn"]
 
     # Create output directory
     os.makedirs(OUTPUT_DIR, exist_ok=True)
