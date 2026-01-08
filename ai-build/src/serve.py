@@ -6,9 +6,9 @@ import joblib
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-MODEL_PATH = "models/model.pkl"
-ENCODERS_PATH = "data_processed/encoders.pkl"
-SCALER_PATH = "data_processed/scaler.pkl"
+MODEL_PATH = "../models/model.pkl"
+ENCODERS_PATH = "../data_processed/encoders.pkl"
+SCALER_PATH = "../data_processed/scaler.pkl"
 
 # Global model and preprocessors
 model = None
@@ -18,25 +18,17 @@ scaler = None
 
 class CustomerData(BaseModel):
     """Input schema for customer data."""
-    gender: Literal["Male", "Female"]
-    SeniorCitizen: int
-    Partner: Literal["Yes", "No"]
-    Dependents: Literal["Yes", "No"]
-    tenure: int
-    PhoneService: Literal["Yes", "No"]
-    MultipleLines: Literal["Yes", "No", "No phone service"]
-    InternetService: Literal["DSL", "Fiber optic", "No"]
-    OnlineSecurity: Literal["Yes", "No", "No internet service"]
-    OnlineBackup: Literal["Yes", "No", "No internet service"]
-    DeviceProtection: Literal["Yes", "No", "No internet service"]
-    TechSupport: Literal["Yes", "No", "No internet service"]
-    StreamingTV: Literal["Yes", "No", "No internet service"]
-    StreamingMovies: Literal["Yes", "No", "No internet service"]
-    Contract: Literal["Month-to-month", "One year", "Two year"]
-    PaperlessBilling: Literal["Yes", "No"]
-    PaymentMethod: Literal["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"]
-    MonthlyCharges: float
-    TotalCharges: float
+    CustomerID: int
+    Age: int
+    Gender: Literal["Male", "Female"]
+    Tenure: int
+    Usage_Frequency: int
+    Support_Calls: int
+    Payment_Delay: int
+    Subscription_Type: Literal["Basic", "Standard", "Premium"]
+    Contract_Length: Literal["Monthly", "Quarterly", "Annual"]
+    Total_Spend: float
+    Last_Interaction: int
 
 
 class PredictionResponse(BaseModel):
@@ -78,15 +70,23 @@ def preprocess_input(data: CustomerData) -> pd.DataFrame:
     # Convert to DataFrame
     df = pd.DataFrame([data.model_dump()])
 
+    # Rename columns: underscores to spaces (to match training data)
+    df.columns = df.columns.str.replace('_', ' ')
+
     # Encode categorical features
     categorical_cols = df.select_dtypes(include=["object"]).columns.tolist()
     for col in categorical_cols:
         if col in encoders:
             df[col] = encoders[col].transform(df[col].astype(str))
 
-    # Scale numerical features
-    numerical_cols = ["tenure", "MonthlyCharges", "TotalCharges"]
-    df[numerical_cols] = scaler.transform(df[numerical_cols])
+    # Reorder columns to match training data (before scaling)
+    expected_cols = ["CustomerID", "Age", "Gender", "Tenure", "Usage Frequency",
+                     "Support Calls", "Payment Delay", "Subscription Type",
+                     "Contract Length", "Total Spend", "Last Interaction"]
+    df = df[expected_cols]
+
+    # Scale ALL columns (scaler was fit on all columns after encoding)
+    df[expected_cols] = scaler.transform(df[expected_cols])
 
     return df
 
