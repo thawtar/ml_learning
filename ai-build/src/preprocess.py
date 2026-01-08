@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 import joblib
 
-DATA_PATH = "../data/customer_churn_data.csv"
+DATA_PATH = "../data/customer_churn_dataset-training-master.csv"
 OUTPUT_DIR = "../data_processed"
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
@@ -24,7 +24,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # Drop customerID - not useful for prediction
-    df = df.drop(columns=["customerID"])
+    #df = df.drop(columns=["customerID"])
 
     # TotalCharges has some blank strings - convert to numeric
     df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors="coerce")
@@ -54,15 +54,26 @@ def encode_features(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return df, encoders
 
 
+# def scale_features(X: pd.DataFrame, scaler: StandardScaler = None) -> tuple[pd.DataFrame, StandardScaler]:
+#     """Scale numerical features using StandardScaler."""
+#     numerical_cols = ["tenure", "MonthlyCharges", "TotalCharges"]
+
+#     if scaler is None:
+#         scaler = StandardScaler()
+#         X[numerical_cols] = scaler.fit_transform(X[numerical_cols])
+#     else:
+#         X[numerical_cols] = scaler.transform(X[numerical_cols])
+
+#     return X, scaler
 def scale_features(X: pd.DataFrame, scaler: StandardScaler = None) -> tuple[pd.DataFrame, StandardScaler]:
     """Scale numerical features using StandardScaler."""
-    numerical_cols = ["tenure", "MonthlyCharges", "TotalCharges"]
-
+    cols = X.select_dtypes(include=[np.number]).columns.tolist()
+    X = X.copy()
     if scaler is None:
         scaler = StandardScaler()
-        X[numerical_cols] = scaler.fit_transform(X[numerical_cols])
+        X[cols] = scaler.fit_transform(X[cols])
     else:
-        X[numerical_cols] = scaler.transform(X[numerical_cols])
+        X[cols] = scaler.transform(X[cols])
 
     return X, scaler
 
@@ -89,9 +100,9 @@ def preprocess() -> None:
     df_val = df_val.reset_index(drop=True)
     df_test = df_test.reset_index(drop=True)
     
-    df_train = clean_data(df_train)
-    df_val = clean_data(df_val)
-    df_test = clean_data(df_test)
+    # df_train = clean_data(df_train)
+    # df_val = clean_data(df_val)
+    # df_test = clean_data(df_test)
     
     df_train, train_encoders = encode_features(df_train)
     df_val, val_encoders = encode_features(df_val)

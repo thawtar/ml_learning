@@ -27,3 +27,6 @@ __pycache__/
 
 ./models_lr
 *.txt
+
+# mlflow files
+mlruns/

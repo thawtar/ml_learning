@@ -5,13 +5,15 @@ import yaml
 import mlflow
 import mlflow.sklearn
 from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import joblib
 
 DATA_DIR = "../data_processed"
 MODEL_DIR = "../models"
 PARAMS_FILE = "../params.yaml"
-
+RANDOM_STATE = 42
 
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
     """Load processed training and test data."""
@@ -55,8 +57,11 @@ def train():
             penalty=penalty,
             solver="lbfgs" if penalty == "l2" else "saga",
             max_iter=1000,
-            random_state=42
+            random_state=RANDOM_STATE,
+            class_weight='balanced'
         )
+        # model = SVC(C=C, kernel='rbf', probability=True, random_state=RANDOM_STATE,
+        #             class_weight='balanced')
         model.fit(X_train, y_train)
 
         # Predictions
