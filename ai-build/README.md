@@ -2,6 +2,8 @@
 
 A minimalist MLOps application for predicting customer churn using machine learning.
 
+I built this little project using Claude Code with Opus 4.5 (mostly to create the baseline boiler plate codes). However, all the details in data loading and preprocessing, training and serving are checked and managed to ensure every step works as expected.
+
 ## Features
 
 - **DVC** — Data versioning and pipeline management
