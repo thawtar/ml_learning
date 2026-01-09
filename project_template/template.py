@@ -9,7 +9,7 @@ def initialize_project_structure():
     with open(init_file_path, "w") as f:
         f.write("# initialization file for customer-churning project\n")
 
-def create_direcotries():
+def create_files_and_directories():
     directories = [
         'src',
         "data",
@@ -26,9 +26,9 @@ def create_direcotries():
         'api': [],
         'config': [],
         'tests': [],
-        'src': ['__init__.py', 'preprocess.py', 'dataloader.py',
-                'train.py', 'evaluate.py', 'predict.py'
-                , 'utils.py', 'monitor.py'] 
+        'src': ['__init__.py', 'preprocess.py',
+                'train.py', 'serve.py', 'ui.py',
+                'utils.py'] 
     }
     for directory in directories:
         os.makedirs( directory, exist_ok=True)
@@ -42,7 +42,7 @@ def create_direcotries():
 def main():
     #initialize_project_structure()
     print("Creating directories and files...")
-    create_direcotries()
+    create_files_and_directories()
 
 if __name__ == "__main__":
     main()
