@@ -1,6 +1,6 @@
 # Thaw's MLOps Self Study Repository
 
-This is Thaw's MLOps self study repository. Some of the python codes and scripts are created using AI but most of the code are manually written, and checked and edited by human.
+This is Thaw's MLOps self study repository. Some of the python codes and scripts (including the following README.md) are created using AI but most of the code are manually written, and checked and edited by human.
 
 ## Contents
 
