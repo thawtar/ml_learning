@@ -1,0 +1,27 @@
+stages:
+  preprocess:
+    cmd: python src/preprocess.py
+    deps:
+      - data/customer_churn_data.csv
+      - src/preprocess.py
+    outs:
+      - data_processed/X_train.csv
+      - data_processed/X_test.csv
+      - data_processed/y_train.csv
+      - data_processed/y_test.csv
+      - data_processed/encoders.pkl
+      - data_processed/scaler.pkl
+
+  train:
+    cmd: python src/train.py
+    deps:
+      - data_processed/X_train.csv
+      - data_processed/X_test.csv
+      - data_processed/y_train.csv
+      - data_processed/y_test.csv
+      - src/train.py
+    params:
+      - model.C
+      - model.penalty
+    outs:
+      - models/model.pkl
