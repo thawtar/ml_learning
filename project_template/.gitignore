@@ -4,6 +4,9 @@
 */.DS_Store
 */.env
 */.venv/
+*.env
+llm.env
+./llm_rag/llm.env
 
 # Python cache files
 *__pycache__/
