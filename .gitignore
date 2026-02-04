@@ -26,7 +26,7 @@ __pycache__/
 *.joblib
 
 ./models_lr
-*.txt
+
 
 # mlflow files
 mlruns/
