@@ -10,6 +10,7 @@ import argparse
 import os
 from datetime import datetime
 from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, classification_report
 import joblib
@@ -47,6 +48,12 @@ def train_and_evaluate(X_train, y_train, X_test, y_test,
         max_iter=1000,
         random_state=42
     )
+    # model = SVC(
+    #     C=C,
+    #     kernel='rbf',
+    #     probability=True,
+    #     random_state=42
+    # )
     model.fit(X_train_scaled, y_train)
     
     # Predict
