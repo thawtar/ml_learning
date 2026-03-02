@@ -1,0 +1,47 @@
+# template .gitignore 
+
+# environment specific files
+*/.DS_Store
+*/.env
+*/.venv/
+*.env
+llm.env
+./llm_rag/llm.env
+
+# Python cache files
+*__pycache__/
+*/.pytest_cache/
+*/.mypy_cache/
+*/.vscode/
+*.pyc
+
+# data files
+*.csv
+*.log
+*.h5
+*.data
+*.names
+*.xlsx
+
+
+# model files
+*.hdf5
+*.model
+*.pth
+
+# encoder settings
+*.pkl
+*.sav
+
+
+*.DS_Store
+.DS_Store
+*.npz
+__pycache__/
+*.joblib
+
+./models_lr
+*.txt
+
+# mlflow files
+mlruns/

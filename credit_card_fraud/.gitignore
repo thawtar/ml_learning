@@ -1,5 +1,16 @@
-*.jpg
-*.png
+# template .gitignore 
+
+# environment specific files
+*/.DS_Store
+*/.env
+*/.venv/
+
+# Python cache files
+*__pycache__/
+*/.pytest_cache/
+*/.mypy_cache/
+*/.vscode/
+*.pyc
 
 # data files
 *.csv
@@ -7,6 +18,8 @@
 *.h5
 *.data
 *.names
+*.xlsx
+
 
 # model files
 *.hdf5
@@ -17,7 +30,6 @@
 *.pkl
 *.sav
 
-*.xlsx
 
 *.DS_Store
 .DS_Store
@@ -26,11 +38,7 @@ __pycache__/
 *.joblib
 
 ./models_lr
-
+*.txt
 
 # mlflow files
 mlruns/
-
-*.cwd
-
-*.env

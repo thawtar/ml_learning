@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(dvc init:*)",
+      "Bash(python src/train.py:*)",
+      "Bash(python train.py:*)"
+    ]
+  }
+}
